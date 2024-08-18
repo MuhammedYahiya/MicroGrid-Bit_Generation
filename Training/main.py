@@ -3,10 +3,12 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import trange
 import numpy as np
+from copy import deepcopy
 
 from data_preparation import get_preqnt_datasets
-from model import create_model
-from train import train, test
+from model import create_model,CybSecMLPForExport
+from train import train, test, test_bipolar
+from export import export_model
 
 if __name__ == "__main__":
     csv_path = '/home/admin_eee/finn/microgrid/V2G_G2V.csv'
@@ -62,3 +64,24 @@ if __name__ == "__main__":
         running_test_acc.append(test_acc)
 
     torch.save(model.state_dict(), "state_dict_self-trained.pth")
+    
+    model = model.cpu()
+    modified_model = deepcopy(model)
+
+    W_orig = modified_model[0].weight.data.detach().numpy()
+    print(f"Original Weight Shape: {W_orig.shape}")
+
+    W_new = W_orig
+    print(f"New Weight Shape: {W_new.shape}")
+
+    modified_model[0].weight.data = torch.from_numpy(W_new)
+
+    model_for_export = CybSecMLPForExport(modified_model)
+    model_for_export.to(device)
+
+    binary_quantization_accuracy = test_bipolar(model_for_export, test_quantized_loader, device)
+
+    print("Binary Quantization Accuracy: ", binary_quantization_accuracy)
+
+    model_dir = "/home/admin_eee/finn/microgrid/model"
+    export_model(model_for_export, model_dir)
