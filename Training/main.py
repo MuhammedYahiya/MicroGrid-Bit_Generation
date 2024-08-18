@@ -1,8 +1,12 @@
 import torch
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from tqdm import trange
+import numpy as np
 
 from data_preparation import get_preqnt_datasets
 from model import create_model
+from train import train, test
 
 if __name__ == "__main__":
     csv_path = '/home/admin_eee/finn/microgrid/V2G_G2V.csv'
@@ -35,3 +39,26 @@ if __name__ == "__main__":
 
     model = create_model(input_size, hidden1, hidden2, weight_bit_width, act_bit_width, num_classes)
     model.to(device)
+    
+    num_epochs = 10
+    lr = 0.001
+
+    criterion = torch.nn.BCEWithLogitsLoss().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=1e-5)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+
+    
+    running_loss = []
+    running_test_acc = []
+    t = trange(num_epochs, desc="Training loss", leave=True)
+    
+    for epoch in t:
+        loss_epoch = train(model, train_quantized_loader, optimizer, criterion, device)
+        test_acc = test(model, test_quantized_loader, device)
+        scheduler.step(np.mean(loss_epoch))
+        t.set_description("Training loss = %f test accuracy = %f" % (np.mean(loss_epoch), test_acc))
+        t.refresh()
+        running_loss.append(loss_epoch)
+        running_test_acc.append(test_acc)
+
+    torch.save(model.state_dict(), "state_dict_self-trained.pth")
